@@ -13,6 +13,46 @@ npm install https://github.com/executecode1/xserver-client
 
 ---
 
+## 使い方
+
+```js
+const XServerClient = require('xserver-client');
+
+// 第2引数: 種類（"je" = Java版 / "be" = Bedrock版）
+// 第3引数: debugログ（trueでログ出力）
+const xserver = new XServerClient("SESSIDをここに", "je", true);
+
+async function run() {
+  // ログイン
+  const loggedIn = await xserver.login("メールアドレス", "パスワード");
+  if (!loggedIn) return console.log("Login failed");
+
+  // プラン延長（48時間）
+  await xserver.refresh(48);
+
+  // トークン取得
+  const tokenOk = await xserver.fetchLoginToken();
+  if (!tokenOk) return console.log("Token fetch failed");
+
+  // コマンド送信
+  await xserver.sendCommand("say Hello from API!");
+
+  // 再起動
+  await xserver.restart();
+}
+
+run();
+```
+
+---
+
+## パラメータ説明
+
+* `je` : Java Edition（デフォルト）
+* `be` : Bedrock Edition
+
+---
+
 ## 注意点
 
 ### SESSIDについて
