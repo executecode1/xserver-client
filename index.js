@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
 const axios = require('axios');
+const iconv = require('iconv-lite');
 
 class XServerClient {
   constructor(serverId, type = 'je', debug = false) {
@@ -143,10 +144,12 @@ class XServerClient {
   async getLimitStatus() {
     try {
       const res = await this.client.get('/xmgame/game/index', {
-        headers: { 'Cookie': this._getCookieHeader() }
+        headers: { 'Cookie': this._getCookieHeader() },
+        responseType: 'arraybuffer'
       });
-      const timeMatches = res.data.match(/<span class="numberTxt">(\d+)<\/span>/g);
-      const dateMatch = res.data.match(/<span class="dateLimit">\s*\((.*?)\)\s*<\/span>/);
+      const html = iconv.decode(Buffer.from(res.data), 'euc-jp');
+      const timeMatches = html.match(/<span class="numberTxt">(\d+)<\/span>/g);
+      const dateMatch = html.match(/<span class="dateLimit">\s*\((.*?)\)\s*<\/span>/);
       if (timeMatches && timeMatches.length >= 2 && dateMatch) {
         const hours = timeMatches[0].match(/(\d+)/)[1];
         const minutes = timeMatches[1].match(/(\d+)/)[1];
