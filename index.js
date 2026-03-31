@@ -139,6 +139,27 @@ class XServerClient {
       return null;
     }
   }
+
+  async getLimitStatus() {
+    try {
+      const res = await this.client.get('/xmgame/game/index', {
+        headers: { 'Cookie': this._getCookieHeader() }
+      });
+      const timeMatch = res.data.match(/残り<span class="numberTxt">(\d+)<\/span>時間<span class="numberTxt">(\d+)<\/span>分/);
+      const dateMatch = res.data.match(/<span class="dateLimit">\((.*?)まで\)<\/span>/);
+      if (timeMatch && dateMatch) {
+        return {
+          hours: parseInt(timeMatch[1], 10),
+          minutes: parseInt(timeMatch[2], 10),
+          limitDate: dateMatch[1]
+        };
+      }
+      return null;
+    } catch (error) {
+      this._debugLog('Fetch limit status error:', error.message);
+      return null;
+    }
+  }
 }
 
 module.exports = XServerClient;
