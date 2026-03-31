@@ -145,8 +145,8 @@ class XServerClient {
       const res = await this.client.get('/xmgame/game/index', {
         headers: { 'Cookie': this._getCookieHeader() }
       });
-      const timeMatch = res.data.match(/残り<span class="numberTxt">(\d+)<\/span>時間<span class="numberTxt">(\d+)<\/span>分/);
-      const dateMatch = res.data.match(/<span class="dateLimit">\((.*?)まで\)<\/span>/);
+      const timeMatch = res.data.match(/(\d+)\s*<\/span>時間\s*<span class="numberTxt">(\d+)\s*<\/span>分/);
+      const dateMatch = res.data.match(/<span class="dateLimit">\((.*?)\)<\/span>/);
       if (timeMatch && dateMatch) {
         return {
           hours: parseInt(timeMatch[1], 10),
