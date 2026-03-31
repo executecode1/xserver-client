@@ -145,13 +145,15 @@ class XServerClient {
       const res = await this.client.get('/xmgame/game/index', {
         headers: { 'Cookie': this._getCookieHeader() }
       });
-      const timeMatch = res.data.match(/(\d+)\s*<\/span>\s*時間\s*<span class="numberTxt">\s*(\d+)\s*<\/span>\s*分/);
+      const timeMatches = res.data.match(/<span class="numberTxt">(\d+)<\/span>/g);
       const dateMatch = res.data.match(/<span class="dateLimit">\s*\((.*?)\)\s*<\/span>/);
-      if (timeMatch && dateMatch) {
+      if (timeMatches && timeMatches.length >= 2 && dateMatch) {
+        const hours = timeMatches[0].match(/(\d+)/)[1];
+        const minutes = timeMatches[1].match(/(\d+)/)[1];
         return {
-          hours: parseInt(timeMatch[1], 10),
-          minutes: parseInt(timeMatch[2], 10),
-          limitDate: dateMatch[1].trim()
+          hours: parseInt(hours, 10),
+          minutes: parseInt(minutes, 10),
+          limitDate: dateMatch[1].replace('まで', '').trim()
         };
       }
       return null;
