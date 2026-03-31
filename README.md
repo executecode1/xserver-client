@@ -18,28 +18,31 @@ npm install https://github.com/executecode1/xserver-client
 ```js
 const XServerClient = require('xserver-client');
 
-// 第2引数: 種類（"je" = Java版 / "be" = Bedrock版）
-// 第3引数: debugログ（trueでログ出力）
-// 第1引数: serverId（サーバーID）
-const xserver = new XServerClient("サーバーIDをここに", "je", true);
-
 async function run() {
-  // ログイン
+  // 1. サーバーID（数字8桁）
+  // 2. エディション（"je" または "be"）
+  // 3. デバッグ出力（true でログを表示）
+  const xserver = new XServerClient("サーバーIDをここに", "je", true);
+
+  // 1. ログイン（自動でSESSIDを取得します）
   const loggedIn = await xserver.login("メールアドレス", "パスワード");
   if (!loggedIn) return console.log("Login failed");
 
-  // プラン延長（48時間）
-  await xserver.refresh(48);
+  // 2. 期限情報の取得（残り時間などを確認）
+  const status = await xserver.getLimitStatus();
+  if (status) {
+    console.log(`残り時間: ${status.hours}時間${status.minutes}分`);
+    console.log(`期限日: ${status.limitDate}`);
+  }
 
-  // トークン取得
+  // 3. 操作用トークンの取得（操作前に必須）
   const tokenOk = await xserver.fetchLoginToken();
   if (!tokenOk) return console.log("Token fetch failed");
 
-  // コマンド送信
-  await xserver.sendCommand("say Hello from API!");
-
-  // 再起動
-  await xserver.restart();
+  // 4. 各種操作
+  await xserver.refresh(48);           // プラン延長（48時間）
+  await xserver.sendCommand("save-all"); // コマンド送信("/"不要)
+  await xserver.restart();             // 再起動
 }
 
 run();
