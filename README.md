@@ -1,6 +1,6 @@
 # xserver-client
 
-Xserver for Gameを外部から操作する非公式APIラッパー。
+Xserver for Gameを外部から操作する非公式APIラッパー。  
 ブラウザパネルを開かずに操作したい人や、自動化したい人向け。
 
 ---
