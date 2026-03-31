@@ -20,7 +20,8 @@ const XServerClient = require('xserver-client');
 
 // 第2引数: 種類（"je" = Java版 / "be" = Bedrock版）
 // 第3引数: debugログ（trueでログ出力）
-const xserver = new XServerClient("SESSIDをここに", "je", true);
+// 第1引数: serverId（サーバーID）
+const xserver = new XServerClient("サーバーIDをここに", "je", true);
 
 async function run() {
   // ログイン
@@ -55,11 +56,12 @@ run();
 
 ## 注意点
 
-### SESSIDについて
+### ログインについて
 
-* `X2%2Fxmgame_SESSID` を手動で取得する必要があります
-* 有効期限が短く、すぐ無効になります
-* 実行時は毎回最新のSESSIDを使用してください
+* メールアドレスとパスワードで自動ログインします
+* 内部でブラウザ（Playwright）を使用してSESSIDを取得します
+* 初回実行時はブラウザの起動に時間がかかる場合があります
+* ログインセキュリティ設定から「不審なログイン時の認証」を無効にしてください（有効だとログインに失敗します）
 
 ---
 
@@ -67,6 +69,17 @@ run();
 
 * 非公式のため、Xserver側の変更に影響を受けます
 * パネルの構造変更などで動作しなくなる可能性があります
+
+---
+
+## 依存関係
+
+* Playwright が必要です
+
+```bash
+npm install playwright
+npx playwright install
+```
 
 ---
 
