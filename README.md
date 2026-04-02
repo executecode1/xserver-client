@@ -43,6 +43,15 @@ async function run() {
   await xserver.refresh(48);           // プラン延長（48時間）
   await xserver.sendCommand("save-all"); // コマンド送信("/"不要)
   await xserver.restart();             // 再起動
+
+  // 5. ログ取得の開始
+  console.log("--- ログの監視を開始します ---");
+  setInterval(async () => {
+    const newLog = await xserver.getLog();
+    if (newLog && newLog.length > 0) {
+      console.log(newLog);
+    }
+  }, 2000);
 }
 
 run();
