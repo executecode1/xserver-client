@@ -17,6 +17,7 @@ class XServerClient {
     });
     this.cookies = {};
     this.loginToken = null;
+    this.lastLine = '';
   }
 
   _debugLog(...args) {
@@ -163,6 +164,42 @@ class XServerClient {
     } catch (error) {
       this._debugLog('Fetch limit status error:', error.message);
       return null;
+    }
+  }
+
+  async getLog() {
+    if (!this.loginToken) return '';
+    try {
+      const params = new URLSearchParams({ login_token: this.loginToken });
+      const res = await this.client.post(`/xmgame/game/apipanel/${this.type}/console/getlog`, params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': this._getCookieHeader(),
+          'Referer': `https://secure.xserver.ne.jp/xmgame/game/${this.type}/console/index`,
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      const currentLog = res.data?.data?.log || res.data?.log || '';
+      if (!currentLog) return '';
+      const lines = currentLog.trim().split('\n');
+      if (lines.length === 0) return '';
+      let newLines = [];
+      if (!this.lastLine) {
+        newLines = lines;
+      } else {
+        const lastIndex = lines.lastIndexOf(this.lastLine);
+        if (lastIndex !== -1) {
+          newLines = lines.slice(lastIndex + 1);
+        } else {
+          newLines = lines.slice(-5);
+        }
+      }
+      if (lines.length > 0) {
+        this.lastLine = lines[lines.length - 1];
+      }
+      return newLines.join('\n');
+    } catch (e) {
+      return '';
     }
   }
 }
