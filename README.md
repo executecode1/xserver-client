@@ -41,7 +41,7 @@ async function run() {
 
   // 4. 各種操作
   await xserver.refresh(48);           // プラン延長（48時間）
-  await xserver.sendCommand("save-all"); // コマンド送信("/"不要)
+  await xserver.sendCommand("kill @e[type=item]"); // コマンド送信("/"不要)
   await xserver.restart();             // 再起動
 
   // 5. ログ取得の開始
