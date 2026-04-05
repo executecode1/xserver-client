@@ -1,6 +1,10 @@
+const fs = require('fs');
+const path = require('path');
 const { chromium } = require('playwright');
-const axios = require('axios');
+const axiosRaw = require('axios');
+const axios = axiosRaw.default || axiosRaw;
 const iconv = require('iconv-lite');
+const FormData = require('form-data');
 
 class XServerClient {
   constructor(serverId, type = 'je', debug = false) {
@@ -18,10 +22,20 @@ class XServerClient {
     this.cookies = {};
     this.loginToken = null;
     this.lastLine = '';
+    this.fmBaseUrl = null;
+    this.fmCookies = {};
+    this.xsrfToken = null;
   }
 
   _debugLog(...args) {
     if (this.debug) console.log(...args);
+  }
+
+  _encodePath(p) {
+    if (!p || p === '/' || p === '.') return '/';
+    const normalized = p.replace(/^\.\//, '/').replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
+    const parts = normalized.split('/').filter(part => part.length > 0);
+    return '/' + parts.map(part => Buffer.from(part).toString('base64')).join('/');
   }
 
   async login(memberid, password) {
@@ -45,13 +59,14 @@ class XServerClient {
       await page.waitForURL('**/xmgame/game/index', { waitUntil: 'commit' });
 
       const cookies = await context.cookies();
+      cookies.forEach(c => { this.cookies[c.name] = c.value; });
       const sessid = cookies.find(c => c.name.includes('xmgame_SESSID'));
       if (sessid) {
         this.cookies['X2%2Fxmgame_SESSID'] = sessid.value;
         this._debugLog('SESSID obtained:', sessid.value);
         return true;
       }
-      return false;
+      return true;
     } catch (e) {
       this._debugLog('Login error:', e.message);
       return false;
@@ -61,23 +76,130 @@ class XServerClient {
     }
   }
 
-  _updateCookies(setCookieHeader) {
-    if (!setCookieHeader) return;
-    setCookieHeader.forEach(cookieStr => {
-      const [pair] = cookieStr.split(';');
-      const [key, value] = pair.split('=');
-      if (key && value) this.cookies[key.trim()] = value.trim();
-    });
+  _getCookieHeader(cookieObj = this.fmCookies || this.cookies) {
+    return Object.entries(cookieObj).map(([key, value]) => `${key}=${value}`).join('; ');
   }
 
-  _getCookieHeader() {
-    return Object.entries(this.cookies).map(([key, value]) => `${key}=${value}`).join('; ');
+  async _prepareFileManager() {
+    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await context.addCookies(Object.entries(this.cookies).map(([name, value]) => ({
+        name, value, domain: 'secure.xserver.ne.jp', path: '/'
+      })));
+      await page.goto('https://secure.xserver.ne.jp/xmgame/game/jumpfilemanager/index', { waitUntil: 'networkidle' });
+      const url = new URL(page.url());
+      this.fmBaseUrl = `${url.protocol}//${url.hostname}`;
+      const fmCookies = await context.cookies(this.fmBaseUrl);
+      this.fmCookies = {};
+      fmCookies.forEach(c => {
+        this.fmCookies[c.name] = c.value;
+        if (c.name === 'XSRF-TOKEN') { this.xsrfToken = decodeURIComponent(c.value); }
+      });
+      return true;
+    } catch (e) { return false; } finally { await browser.close(); }
+  }
+
+  async getFileContent(remoteFilePath) {
+    if (!this.fmBaseUrl) await this._prepareFileManager();
+    const encodedPath = this._encodePath(remoteFilePath);
+    try {
+      const res = await axios.get(`${this.fmBaseUrl}/api/resources/resource`, {
+        params: { path: encodedPath },
+        headers: { 'Cookie': this._getCookieHeader(this.fmCookies), 'X-XSRF-TOKEN': this.xsrfToken, 'Accept': 'application/json' }
+      });
+      return res.data.results?.contents || null;
+    } catch (error) { return null; }
+  }
+
+  async saveFileContent(remoteFilePath, newContents) {
+    if (!this.fmBaseUrl) await this._prepareFileManager();
+    const encodedPath = this._encodePath(remoteFilePath);
+    try {
+      const res = await axios.post(`${this.fmBaseUrl}/api/resources/resource`, {
+        path: encodedPath,
+        contents: newContents,
+        encoding: "UTF-8"
+      }, {
+        headers: { 
+          'Cookie': this._getCookieHeader(this.fmCookies), 
+          'X-XSRF-TOKEN': this.xsrfToken, 
+          'Content-Type': 'application/json' 
+        }
+      });
+      this._debugLog('Save Success:', remoteFilePath);
+      return res.data;
+    } catch (error) {
+      this._debugLog('Save Error:', error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  async uploadFile(remoteDirPath, fileContent, fileName) {
+    if (!this.fmBaseUrl) await this._prepareFileManager();
+    const encodedPath = this._encodePath(remoteDirPath);
+    const form = new FormData();
+    form.append('path', encodedPath);
+    form.append('encoding', 'UTF-8');
+    form.append('files[]', fileContent, { filename: fileName });
+    try {
+      const res = await axios.post(`${this.fmBaseUrl}/api/resources/upload`, form, {
+        headers: { ...form.getHeaders(), 'Cookie': this._getCookieHeader(this.fmCookies), 'X-XSRF-TOKEN': this.xsrfToken }
+      });
+      return res.data;
+    } catch (error) { return null; }
+  }
+
+  async deleteFile(remoteFilePath) {
+    if (!this.fmBaseUrl) await this._prepareFileManager();
+    const encodedPath = this._encodePath(remoteFilePath);
+    try {
+      const res = await axios.request({
+        method: 'DELETE',
+        url: `${this.fmBaseUrl}/api/resources`,
+        headers: { 'Cookie': this._getCookieHeader(this.fmCookies), 'X-XSRF-TOKEN': this.xsrfToken, 'Content-Type': 'application/json' },
+        data: { resources: [{ path: encodedPath, type: "file" }] }
+      });
+      return res.data;
+    } catch (error) { return null; }
+  }
+
+  async decompressFile(remoteZipPath) {
+    if (!this.fmBaseUrl) await this._prepareFileManager();
+    const parentDir = remoteZipPath.substring(0, remoteZipPath.lastIndexOf('/')) || '/';
+    const encodedParentPath = this._encodePath(parentDir);
+    const encodedZipPath = this._encodePath(remoteZipPath);
+    try {
+      const res = await axios.post(`${this.fmBaseUrl}/api/resources/decompress`, {
+        path: encodedParentPath,
+        decompressFile: encodedZipPath
+      }, {
+        headers: { 'Cookie': this._getCookieHeader(this.fmCookies), 'X-XSRF-TOKEN': this.xsrfToken, 'Content-Type': 'application/json' }
+      });
+      return res.data;
+    } catch (error) { return null; }
+  }
+
+  async renameFile(remoteOldPath, newName) {
+    if (!this.fmBaseUrl) await this._prepareFileManager();
+    const encodedOldPath = this._encodePath(remoteOldPath);
+    try {
+      const res = await axios.post(`${this.fmBaseUrl}/api/resources/rename`, {
+        path: encodedOldPath,
+        renamedName: newName,
+        encoding: "UTF-8"
+      }, {
+        headers: { 'Cookie': this._getCookieHeader(this.fmCookies), 'X-XSRF-TOKEN': this.xsrfToken, 'Content-Type': 'application/json' }
+      });
+      return res.data;
+    } catch (error) { return null; }
   }
 
   async fetchLoginToken() {
     try {
       const res = await this.client.get(`/xmgame/game/${this.type}/console/index`, {
-        headers: { 'Cookie': this._getCookieHeader() }
+        headers: { 'Cookie': this._getCookieHeader(this.cookies) }
       });
       const tokenMatch = res.data.match(/let clientLoginToken = "([a-f0-9]+)";/);
       if (tokenMatch) {
@@ -93,13 +215,13 @@ class XServerClient {
   }
 
   async _postAction(actionPath, extraParams = {}, successMsg = 'Success') {
-    if (!this.loginToken) return;
+    if (!this.loginToken) await this.fetchLoginToken();
     try {
       const params = new URLSearchParams({ login_token: this.loginToken, ...extraParams });
       const res = await this.client.post(actionPath, params.toString(), {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': this._getCookieHeader(),
+          'Cookie': this._getCookieHeader(this.cookies),
           'Referer': `https://secure.xserver.ne.jp/xmgame/game/${this.type}/console/index`
         }
       });
@@ -121,7 +243,7 @@ class XServerClient {
   async refresh(period = 48) {
     try {
       const confRes = await this.client.get('/xmgame/game/freeplan/extend/conf', {
-        headers: { 'Cookie': this._getCookieHeader() }
+        headers: { 'Cookie': this._getCookieHeader(this.cookies) }
       });
       const uniqidMatch = confRes.data.match(/let clientLoginToken = "([a-f0-9]+)";/);
       const csrfMatch = confRes.data.match(/name="ethna_csrf" value="([a-f0-9]+)"/);
@@ -130,7 +252,7 @@ class XServerClient {
       const res = await this.client.post('/xmgame/game/freeplan/extend/do', params.toString(), {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': this._getCookieHeader(),
+          'Cookie': this._getCookieHeader(this.cookies),
           'Referer': 'https://secure.xserver.ne.jp/xmgame/game/freeplan/extend/conf'
         }
       });
@@ -145,7 +267,7 @@ class XServerClient {
   async getLimitStatus() {
     try {
       const res = await this.client.get('/xmgame/game/index', {
-        headers: { 'Cookie': this._getCookieHeader() },
+        headers: { 'Cookie': this._getCookieHeader(this.cookies) },
         responseType: 'arraybuffer'
       });
       const html = iconv.decode(Buffer.from(res.data), 'euc-jp');
@@ -168,13 +290,13 @@ class XServerClient {
   }
 
   async getLog() {
-    if (!this.loginToken) return '';
+    if (!this.loginToken) await this.fetchLoginToken();
     try {
       const params = new URLSearchParams({ login_token: this.loginToken });
       const res = await this.client.post(`/xmgame/game/apipanel/${this.type}/console/getlog`, params.toString(), {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': this._getCookieHeader(),
+          'Cookie': this._getCookieHeader(this.cookies),
           'Referer': `https://secure.xserver.ne.jp/xmgame/game/${this.type}/console/index`,
           'X-Requested-With': 'XMLHttpRequest'
         }
