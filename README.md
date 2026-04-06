@@ -44,7 +44,27 @@ async function run() {
   await xserver.sendCommand("kill @e[type=item]"); // コマンド送信("/"不要)
   await xserver.restart();             // 再起動
 
-  // 5. ログ取得の開始
+  // 5. ファイルマネージャー操作 (取得・保存・アップロード・リネーム・解凍・削除)
+  // 取得
+  const content = await xserver.getFileContent(`${targetDir}/level.dat`);
+  
+  // 保存 (上書き)
+  await xserver.saveFileContent(`${targetDir}/note.txt`, "Updated via API");
+
+  // アップロード
+  const fileBuffer = Buffer.from("New data");
+  await xserver.uploadFile(targetDir, fileBuffer, "upload_test.txt");
+
+  // リネーム
+  await xserver.renameFile(`${targetDir}/upload_test.txt`, "renamed_test.txt");
+
+  // 解凍
+  await xserver.decompressFile(`${targetDir}/world_backup.zip`);
+
+  // 削除
+  await xserver.deleteFile(`${targetDir}/old_file.txt`);
+
+  // 6. ログ取得の開始
   console.log("--- ログの監視を開始します ---");
   setInterval(async () => {
     const newLog = await xserver.getLog();
