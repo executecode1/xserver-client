@@ -45,6 +45,9 @@ async function run() {
   await xserver.restart();             // 再起動
 
   // 5. ファイルマネージャー操作 (取得・保存・アップロード・リネーム・解凍・削除)
+  // 操作対象のディレクトリ（Bedrock版のワールドフォルダ例）
+  const targetDir = "/minecraft/worlds/Bedrock level";
+
   // 取得
   const content = await xserver.getFileContent(`${targetDir}/level.dat`);
   
