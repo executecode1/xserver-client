@@ -16,7 +16,8 @@ npm install https://github.com/executecode1/xserver-client
 ## 使い方
 
 ```js
-const XServerClient = require('xserver-client');
+const { XServerClient, XserverMgrScanner } = require('xserver-client');
+const fs = require('fs');
 
 async function run() {
   // 1. サーバーID（数字8桁）
@@ -44,12 +45,16 @@ async function run() {
   await xserver.sendCommand("kill @e[type=item]"); // コマンド送信("/"不要)
   await xserver.restart();             // 再起動
 
-  // 5. ファイルマネージャー操作 (取得・保存・アップロード・リネーム・解凍・削除)
-  // 操作対象のディレクトリ（Bedrock版のワールドフォルダ例）
-  const targetDir = "/minecraft/worlds/Bedrock level";
+  // 5. ファイル走査 (XserverMgrScanner)
+  const scanner = new XserverMgrScanner(xserver);
+  const files = await scanner.getFiles("/minecraft");
+  console.log("ファイル一覧:", files);
+
+  // 6. ファイルマネージャー操作 (取得・保存・アップロード・リネーム・解凍・削除・ダウンロード)
+  const targetDir = "/minecraft";
 
   // 取得
-  const content = await xserver.getFileContent(`${targetDir}/level.dat`);
+  const content = await xserver.getFileContent(`${targetDir}/server.properties`);
   
   // 保存 (上書き)
   await xserver.saveFileContent(`${targetDir}/note.txt`, "Updated via API");
@@ -57,6 +62,13 @@ async function run() {
   // アップロード
   const fileBuffer = Buffer.from("New data");
   await xserver.uploadFile(targetDir, fileBuffer, "upload_test.txt");
+
+  // ダウンロード (ファイルまたはフォルダ)
+  const downloadData = await xserver.downloadResource(`${targetDir}/world`, 'folder');
+  if (downloadData) {
+    fs.writeFileSync('world_download.zip', Buffer.from(downloadData));
+    console.log("ダウンロード完了: world_download.zip");
+  }
 
   // リネーム
   await xserver.renameFile(`${targetDir}/upload_test.txt`, "renamed_test.txt");
@@ -67,17 +79,17 @@ async function run() {
   // 削除
   await xserver.deleteFile(`${targetDir}/old_file.txt`);
 
-  // 6. ログ取得の開始
+  // 7. ログ取得の開始
   console.log("--- ログの監視を開始します ---");
   setInterval(async () => {
     const newLog = await xserver.getLog();
     if (newLog && newLog.length > 0) {
-      console.log(newLog);
+      process.stdout.write(newLog + "\n");
     }
   }, 2000);
 }
 
-run();
+run().catch(console.error);
 ```
 
 ---
