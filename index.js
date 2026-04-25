@@ -127,8 +127,12 @@ class XServerClient {
           'Content-Type': 'application/json' 
         }
       });
+      this._debugLog('Save Success:', remoteFilePath);
       return res.data;
-    } catch (error) { return null; }
+    } catch (error) {
+      this._debugLog('Save Error:', error.response?.data || error.message);
+      return null;
+    }
   }
 
   async uploadFile(remoteDirPath, fileContent, fileName) {
@@ -148,22 +152,13 @@ class XServerClient {
 
   async downloadResource(remotePath, type = 'file') {
     if (!this.fmBaseUrl) await this._prepareFileManager();
-    
     const name = remotePath.split('/').pop() || 'download';
     const encodedName = Buffer.from(name).toString('base64');
     const encodedPath = this._encodePath(remotePath);
-
     try {
       const res = await axios.get(`${this.fmBaseUrl}/api/resources/download`, {
-        params: {
-          name: encodedName,
-          path: encodedPath,
-          type: type
-        },
-        headers: { 
-          'Cookie': this._getCookieHeader(this.fmCookies), 
-          'X-XSRF-TOKEN': this.xsrfToken 
-        },
+        params: { name: encodedName, path: encodedPath, type: type },
+        headers: { 'Cookie': this._getCookieHeader(this.fmCookies), 'X-XSRF-TOKEN': this.xsrfToken },
         responseType: 'arraybuffer'
       });
       return res.data;
@@ -187,6 +182,37 @@ class XServerClient {
     } catch (error) { return null; }
   }
 
+  async decompressFile(remoteZipPath) {
+    if (!this.fmBaseUrl) await this._prepareFileManager();
+    const parentDir = remoteZipPath.substring(0, remoteZipPath.lastIndexOf('/')) || '/';
+    const encodedParentPath = this._encodePath(parentDir);
+    const encodedZipPath = this._encodePath(remoteZipPath);
+    try {
+      const res = await axios.post(`${this.fmBaseUrl}/api/resources/decompress`, {
+        path: encodedParentPath,
+        decompressFile: encodedZipPath
+      }, {
+        headers: { 'Cookie': this._getCookieHeader(this.fmCookies), 'X-XSRF-TOKEN': this.xsrfToken, 'Content-Type': 'application/json' }
+      });
+      return res.data;
+    } catch (error) { return null; }
+  }
+
+  async renameFile(remoteOldPath, newName) {
+    if (!this.fmBaseUrl) await this._prepareFileManager();
+    const encodedOldPath = this._encodePath(remoteOldPath);
+    try {
+      const res = await axios.post(`${this.fmBaseUrl}/api/resources/rename`, {
+        path: encodedOldPath,
+        renamedName: newName,
+        encoding: "UTF-8"
+      }, {
+        headers: { 'Cookie': this._getCookieHeader(this.fmCookies), 'X-XSRF-TOKEN': this.xsrfToken, 'Content-Type': 'application/json' }
+      });
+      return res.data;
+    } catch (error) { return null; }
+  }
+
   async fetchLoginToken() {
     try {
       const res = await this.client.get(`/xmgame/game/${this.type}/console/index`, {
@@ -195,10 +221,14 @@ class XServerClient {
       const tokenMatch = res.data.match(/let clientLoginToken = "([a-f0-9]+)";/);
       if (tokenMatch) {
         this.loginToken = tokenMatch[1];
+        this._debugLog('Token fetched:', this.loginToken);
         return true;
       }
       return false;
-    } catch (error) { return false; }
+    } catch (error) {
+      this._debugLog('Fetch token error:', error.message);
+      return false;
+    }
   }
 
   async _postAction(actionPath, extraParams = {}, successMsg = 'Success') {
@@ -212,14 +242,20 @@ class XServerClient {
           'Referer': `https://secure.xserver.ne.jp/xmgame/game/${this.type}/console/index`
         }
       });
+      if (res.data && res.data.result !== false) {
+        console.log(`${successMsg}:`, res.data);
+      }
       return res.data;
-    } catch (error) { return null; }
+    } catch (error) {
+      this._debugLog(`${successMsg} error:`, error.message);
+      return null;
+    }
   }
 
-  async start() { return await this._postAction('/xmgame/game/apipanel/gameserver/start', {}, 'Server Started'); }
-  async stop() { return await this._postAction('/xmgame/game/apipanel/gameserver/stop', {}, 'Server Stopped'); }
-  async restart() { return await this._postAction('/xmgame/game/apipanel/gameserver/restart', {}, 'Server Restarted'); }
-  async sendCommand(command) { return await this._postAction(`/xmgame/game/apipanel/${this.type}/console/sendcommand`, { command }, `Command Sent [${command}]`); }
+  async start() { await this._postAction('/xmgame/game/apipanel/gameserver/start', {}, 'Server Started'); }
+  async stop() { await this._postAction('/xmgame/game/apipanel/gameserver/stop', {}, 'Server Stopped'); }
+  async restart() { await this._postAction('/xmgame/game/apipanel/gameserver/restart', {}, 'Server Restarted'); }
+  async sendCommand(command) { await this._postAction(`/xmgame/game/apipanel/${this.type}/console/sendcommand`, { command }, `Command Sent [${command}]`); }
 
   async refresh(period = 48) {
     try {
@@ -237,8 +273,12 @@ class XServerClient {
           'Referer': 'https://secure.xserver.ne.jp/xmgame/game/freeplan/extend/conf'
         }
       });
+      console.log(`Plan Refreshed (${period}h):`, res.status === 200 || res.status === 302 ? 'Success' : 'Fail');
       return res.data;
-    } catch (error) { return null; }
+    } catch (error) {
+      console.error('Refresh failed:', error.message);
+      return null;
+    }
   }
 
   async getLimitStatus() {
@@ -260,7 +300,10 @@ class XServerClient {
         };
       }
       return null;
-    } catch (error) { return null; }
+    } catch (error) {
+      this._debugLog('Fetch limit status error:', error.message);
+      return null;
+    }
   }
 
   async getLog() {
@@ -308,7 +351,6 @@ class XserverMgrScanner {
 
   async getFiles(remoteDirPath, options = {}) {
     if (!this.client.fmBaseUrl) await this.client._prepareFileManager();
-
     try {
       const { data } = await axios({
         method: 'get',
@@ -320,17 +362,11 @@ class XserverMgrScanner {
           'Accept': 'application/json'
         }
       });
-
       const items = Array.isArray(data) ? data : (data.results || []);
-
       return items.map(item => {
         const name = item.nameDisplay || Buffer.from(item.name, 'base64').toString('utf-8');
         let fullPath = `${remoteDirPath}/${name}`.replace(/\/+/g, '/');
-        
-        if (options.suffix) {
-          fullPath += `/${options.suffix}`;
-        }
-
+        if (options.suffix) fullPath += `/${options.suffix}`;
         return {
           name,
           type: item.resourceType,
@@ -339,9 +375,7 @@ class XserverMgrScanner {
           lastModified: item.lastModified
         };
       });
-    } catch (error) {
-      return [];
-    }
+    } catch (error) { return []; }
   }
 }
 
