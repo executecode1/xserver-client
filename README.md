@@ -8,7 +8,7 @@ Xserver for Gameを外部から操作する非公式APIラッパー。
 ## インストール
 
 ```bash
-npm install https://github.com/executecode1/xserver-client
+npm install xserver-client
 ```
 
 ---
